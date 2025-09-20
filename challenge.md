@@ -86,17 +86,21 @@ FROM #customer_orders;
 ### 3. How many successful orders were delivered by each runner?
 
 ````sql
-SELECT 
-  runner_id, 
-  COUNT(order_id) AS successful_orders
-FROM #runner_orders
-WHERE distance != 0
-GROUP BY runner_id;
+select
+runner_id,
+sum(case when cancellation is null then 1 else 0 end) as no_of_delivery
+from runner_orders
+group by runner_id;
 ````
 
 **Answer:**
 
-![image](https://user-images.githubusercontent.com/81607668/129738112-6eada46a-8c32-495a-8e26-793b2fec89ef.png)
+|runner_id|no_of_delivery|
+|---------|--------------|
+|1        |4             |
+|2        |3             |
+|3        |1             |
+
 
 - Runner 1 has 4 successful delivered orders.
 - Runner 2 has 3 successful delivered orders.
@@ -105,158 +109,156 @@ GROUP BY runner_id;
 ### 4. How many of each type of pizza was delivered?
 
 ````sql
-SELECT 
-  p.pizza_name, 
-  COUNT(c.pizza_id) AS delivered_pizza_count
-FROM #customer_orders AS c
-JOIN #runner_orders AS r
-  ON c.order_id = r.order_id
-JOIN pizza_names AS p
-  ON c.pizza_id = p.pizza_id
-WHERE r.distance != 0
-GROUP BY p.pizza_name;
+select 
+pizza_id,
+count(pizza_id) as number
+from customer_orders
+group by pizza_id;
+
 ````
 
 **Answer:**
 
-![image](https://user-images.githubusercontent.com/81607668/129738140-c9c002ff-5aed-48ab-bdfa-cadbd98973a9.png)
+|pizza_id|number|
+|--------|------|
+|1       |10    |
+|2       |4     |
 
-- There are 9 delivered Meatlovers pizzas and 3 Vegetarian pizzas.
 
 ### 5. How many Vegetarian and Meatlovers were ordered by each customer?**
 
 ````sql
-SELECT 
-  c.customer_id, 
-  p.pizza_name, 
-  COUNT(p.pizza_name) AS order_count
-FROM #customer_orders AS c
-JOIN pizza_names AS p
-  ON c.pizza_id= p.pizza_id
-GROUP BY c.customer_id, p.pizza_name
-ORDER BY c.customer_id;
+select 
+f.customer_id,
+sum( case when cat="1" then 1 else 0 end) as meatlover,
+sum(case when cat="0" then 1 else 0 end) as veglover
+from
+(select
+t.customer_id,
+case when pn.pizza_name = "Meatlovers" then 1 else 0 end as cat
+from
+(select
+customer_id,
+pizza_id
+from customer_orders
+order by customer_id) t
+left join pizza_names pn on pn.pizza_id=t.pizza_id) f
+group by customer_id
+order by customer_id;
+
 ````
 
 **Answer:**
 
-![image](https://user-images.githubusercontent.com/81607668/129738167-269df165-1c9a-446a-b757-c7fc9a9021ed.png)
+|customer_id|meatlover|veglover|
+|-----------|---------|--------|
+|101        |2        |1       |
+|102        |2        |1       |
+|103        |3        |1       |
+|104        |3        |0       |
+|105        |0        |1       |
 
 - Customer 101 ordered 2 Meatlovers pizzas and 1 Vegetarian pizza.
-- Customer 102 ordered 2 Meatlovers pizzas and 2 Vegetarian pizzas.
+- Customer 102 ordered 2 Meatlovers pizzas and 1 Vegetarian pizzas.
 - Customer 103 ordered 3 Meatlovers pizzas and 1 Vegetarian pizza.
-- Customer 104 ordered 1 Meatlovers pizza.
+- Customer 104 ordered 3 Meatlovers pizza.
 - Customer 105 ordered 1 Vegetarian pizza.
 
 ### 6. What was the maximum number of pizzas delivered in a single order?
 
 ````sql
-WITH pizza_count_cte AS
-(
-  SELECT 
-    c.order_id, 
-    COUNT(c.pizza_id) AS pizza_per_order
-  FROM #customer_orders AS c
-  JOIN #runner_orders AS r
-    ON c.order_id = r.order_id
-  WHERE r.distance != 0
-  GROUP BY c.order_id
-)
-
-SELECT 
-  MAX(pizza_per_order) AS pizza_count
-FROM pizza_count_cte;
+select
+max(t.ordered) as max
+from
+(select
+co.order_id as id,
+count(co.pizza_id ) as ordered
+from customer_orders co
+left join runner_orders ro on ro.order_id=co.order_id
+where ro.cancellation is null
+group by co.order_id) t;
 ````
 
 **Answer:**
 
-![image](https://user-images.githubusercontent.com/81607668/129738201-f676edd4-2530-4663-9ed8-6e6ec4d9cc68.png)
+|max|
+|---|
+|3  |
 
 - Maximum number of pizza delivered in a single order is 3 pizzas.
 
 ### 7. For each customer, how many delivered pizzas had at least 1 change and how many had no changes?
 
 ````sql
-SELECT 
-  c.customer_id,
-  SUM(
-    CASE WHEN c.exclusions <> ' ' OR c.extras <> ' ' THEN 1
-    ELSE 0
-    END) AS at_least_1_change,
-  SUM(
-    CASE WHEN c.exclusions = ' ' AND c.extras = ' ' THEN 1 
-    ELSE 0
-    END) AS no_change
-FROM #customer_orders AS c
-JOIN #runner_orders AS r
-  ON c.order_id = r.order_id
-WHERE r.distance != 0
-GROUP BY c.customer_id
-ORDER BY c.customer_id;
+select
+t.customer_id,
+sum(case when cat= 1 then 1 else 0 end) as yes_changed,
+sum(case when cat=0 then 1 else 0 end) as no_change
+from
+(select
+customer_id,
+order_id,
+case when exclusions is null and extras is null then 0 else 1 end as cat
+from customer_orders) t
+group by customer_id;
 ````
 
 **Answer:**
 
-![image](https://user-images.githubusercontent.com/81607668/129738236-2c4383cb-9d42-458c-b9be-9963c336ee58.png)
+|customer_id|yes_changed|no_change|
+|-----------|-----------|---------|
+|101        |0          |3        |
+|102        |0          |3        |
+|103        |4          |0        |
+|104        |2          |1        |
+|105        |1          |0        |
 
-- Customer 101 and 102 likes his/her pizzas per the original recipe.
-- Customer 103, 104 and 105 have their own preference for pizza topping and requested at least 1 change (extra or exclusion topping) on their pizza.
+
 
 ### 8. How many pizzas were delivered that had both exclusions and extras?
 
 ````sql
-SELECT  
-  SUM(
-    CASE WHEN exclusions IS NOT NULL AND extras IS NOT NULL THEN 1
-    ELSE 0
-    END) AS pizza_count_w_exclusions_extras
-FROM #customer_orders AS c
-JOIN #runner_orders AS r
-  ON c.order_id = r.order_id
-WHERE r.distance >= 1 
-  AND exclusions <> ' ' 
-  AND extras <> ' ';
+select
+count(order_id) as count
+from customer_orders
+where exclusions is not null and extras is not null;
+
 ````
 
 **Answer:**
 
-![image](https://user-images.githubusercontent.com/81607668/129738278-dd3e7056-309d-42fc-a5e3-00f7b5d4609e.png)
+|count|
+|-----|
+|2    |
 
-- Only 1 pizza delivered that had both extra and exclusion topping. That’s one fussy customer!
+- Only 2 pizza delivered that had both extra and exclusion topping.
 
 ### 9. What was the total volume of pizzas ordered for each hour of the day?
 
 ````sql
-SELECT 
-  DATEPART(HOUR, [order_time]) AS hour_of_day, 
-  COUNT(order_id) AS pizza_count
-FROM #customer_orders
-GROUP BY DATEPART(HOUR, [order_time]);
+select 
+hour(order_time) as order_hour,
+count(pizza_id) as orders
+from customer_orders
+group by  1;
+
 ````
 
 **Answer:**
 
-![image](https://user-images.githubusercontent.com/81607668/129738302-573430e9-1785-4c71-adc1-464ffa94de8a.png)
+|order_hour|orders|
+|----------|------|
+|18        |3     |
+|19        |1     |
+|23        |3     |
+|13        |3     |
+|21        |3     |
+|11        |1     |
 
-- Highest volume of pizza ordered is at 13 (1:00 pm), 18 (6:00 pm) and 21 (9:00 pm).
-- Lowest volume of pizza ordered is at 11 (11:00 am), 19 (7:00 pm) and 23 (11:00 pm).
 
 ### 10. What was the volume of orders for each day of the week?
 
-````sql
-SELECT 
-  FORMAT(DATEADD(DAY, 2, order_time),'dddd') AS day_of_week, -- add 2 to adjust 1st day of the week as Monday
-  COUNT(order_id) AS total_pizzas_ordered
-FROM #customer_orders
-GROUP BY FORMAT(DATEADD(DAY, 2, order_time),'dddd');
-````
 
-**Answer:**
 
-![image](https://user-images.githubusercontent.com/81607668/129738331-233744f6-3b57-4f4f-9a51-f7a699a9eb2e.png)
 
-- There are 5 pizzas ordered on Friday and Monday.
-- There are 3 pizzas ordered on Saturday.
-- There is 1 pizza ordered on Sunday.
-
-***Click [here](https://github.com/katiehuangx/8-Week-SQL-Challenge/blob/main/Case%20Study%20%232%20-%20Pizza%20Runner/B.%20Runner%20and%20Customer%20Experience.md) for solution for B. Runner and Customer Experience!***
 
